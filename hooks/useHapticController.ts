@@ -2,10 +2,9 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 
 export const useHapticController = () => {
   const [hapticGamepad, setHapticGamepad] = useState<Gamepad | null>(null);
-  const pulseIntervalRef = useRef<number | null>(null);
 
   const connectHandler = useCallback((e: GamepadEvent) => {
-    // FIX: The Gamepad API type definitions can be too strict, typing actuator type as just 'vibration'.
+    // The Gamepad API type definitions can be too strict, typing actuator type as just 'vibration'.
     // Casting to string allows checking for 'dual-rumble', which is also a valid type.
     if (e.gamepad.vibrationActuator && (e.gamepad.vibrationActuator.type as string) === 'dual-rumble') {
       console.log('Haptic gamepad connected:', e.gamepad.id);
@@ -17,10 +16,6 @@ export const useHapticController = () => {
     if (hapticGamepad && e.gamepad.id === hapticGamepad.id) {
       console.log('Haptic gamepad disconnected.');
       setHapticGamepad(null);
-      if (pulseIntervalRef.current) {
-        clearInterval(pulseIntervalRef.current);
-        pulseIntervalRef.current = null;
-      }
     }
   }, [hapticGamepad]);
 
@@ -31,7 +26,7 @@ export const useHapticController = () => {
     // Check for already connected gamepads
     const gamepads = navigator.getGamepads();
     for (const gamepad of gamepads) {
-      // FIX: The Gamepad API type definitions can be too strict, typing actuator type as just 'vibration'.
+      // The Gamepad API type definitions can be too strict, typing actuator type as just 'vibration'.
       // Casting to string allows checking for 'dual-rumble', which is also a valid type.
       if (gamepad && gamepad.vibrationActuator && (gamepad.vibrationActuator.type as string) === 'dual-rumble') {
         setHapticGamepad(gamepad);
@@ -42,48 +37,37 @@ export const useHapticController = () => {
     return () => {
       window.removeEventListener('gamepadconnected', connectHandler);
       window.removeEventListener('gamepaddisconnected', disconnectHandler);
-      if (pulseIntervalRef.current) {
-        clearInterval(pulseIntervalRef.current);
-      }
     };
   }, [connectHandler, disconnectHandler]);
 
   const stopHaptics = useCallback(() => {
-    if (pulseIntervalRef.current) {
-      clearInterval(pulseIntervalRef.current);
-      pulseIntervalRef.current = null;
-    }
-    // The Gamepad API doesn't have a reliable 'stop' or 'reset' on all browsers,
-    // so clearing the interval is the primary way to stop the effect.
-    if (hapticGamepad?.vibrationActuator?.reset) {
-        hapticGamepad.vibrationActuator.reset();
+    if (hapticGamepad?.vibrationActuator) {
+        // The reset() method is the preferred, standards-compliant way to stop all effects.
+        if (typeof hapticGamepad.vibrationActuator.reset === 'function') {
+            hapticGamepad.vibrationActuator.reset();
+        } else {
+            // As a fallback, play a short, zero-intensity effect to stop any ongoing vibration.
+            hapticGamepad.vibrationActuator.playEffect('dual-rumble', {
+                duration: 1,
+                strongMagnitude: 0,
+                weakMagnitude: 0,
+            });
+        }
     }
   }, [hapticGamepad]);
 
-  const startHapticPulse = useCallback((frequency: number, leftIntensity: number, rightIntensity: number) => {
-    stopHaptics();
-    if (!hapticGamepad || !hapticGamepad.vibrationActuator || frequency <= 0) {
-      return;
+  const playHapticEffect = useCallback((strongMagnitude: number, weakMagnitude: number, duration: number) => {
+    if (hapticGamepad?.vibrationActuator) {
+      hapticGamepad.vibrationActuator.playEffect('dual-rumble', {
+        startDelay: 0,
+        duration: Math.max(1, duration),
+        weakMagnitude: Math.max(0, Math.min(1, weakMagnitude)),
+        strongMagnitude: Math.max(0, Math.min(1, strongMagnitude)),
+      });
     }
-
-    const interval = 1000 / frequency;
-    // Pulse duration should be less than the interval to create a pulse effect
-    const pulseDuration = Math.max(1, interval / 2); 
-
-    pulseIntervalRef.current = window.setInterval(() => {
-      if (hapticGamepad && hapticGamepad.vibrationActuator) {
-        hapticGamepad.vibrationActuator.playEffect('dual-rumble', {
-          startDelay: 0,
-          duration: pulseDuration,
-          weakMagnitude: rightIntensity,
-          strongMagnitude: leftIntensity,
-        });
-      }
-    }, interval);
-
-  }, [hapticGamepad, stopHaptics]);
+  }, [hapticGamepad]);
 
   const isHapticReady = hapticGamepad !== null;
 
-  return { isHapticReady, startHapticPulse, stopHaptics };
+  return { isHapticReady, playHapticEffect, stopHaptics };
 };
