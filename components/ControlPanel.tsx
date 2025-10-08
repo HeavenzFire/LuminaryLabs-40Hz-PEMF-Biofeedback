@@ -5,11 +5,14 @@ interface ControlPanelProps {
   isBiofeedbackActive: boolean;
   isPlaying: boolean;
   isGroundingActive: boolean;
+  isHapticReady: boolean;
+  isHapticEnabled: boolean;
   onStartBiofeedback: () => void;
   onPlaySolfeggio: (freq: number) => void;
   onPlayPemf: () => void;
   onStop: () => void;
   onToggleGrounding: () => void;
+  onToggleHaptics: () => void;
   onClearSettings: () => void;
   pemfIntensity: number;
   solfeggioIntensity: number;
@@ -61,12 +64,15 @@ const SliderControl: React.FC<{
 const ControlPanel: React.FC<ControlPanelProps> = ({ 
     isBiofeedbackActive, 
     isPlaying, 
-    isGroundingActive, 
+    isGroundingActive,
+    isHapticReady,
+    isHapticEnabled,
     onStartBiofeedback, 
     onPlaySolfeggio, 
     onPlayPemf, 
     onStop, 
-    onToggleGrounding, 
+    onToggleGrounding,
+    onToggleHaptics,
     onClearSettings,
     pemfIntensity,
     solfeggioIntensity,
@@ -106,6 +112,18 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
           />
         </div>
       <div className="w-full border-t border-gray-600 my-2"></div>
+      {isHapticReady && (
+        <ControlButton
+          onClick={onToggleHaptics}
+          className={`w-full ${
+            isHapticEnabled
+              ? 'bg-teal-600 hover:bg-teal-500 focus:ring-teal-400'
+              : 'bg-gray-600 hover:bg-gray-500 focus:ring-gray-400'
+          }`}
+        >
+          Haptic Feedback: {isHapticEnabled ? 'ON' : 'OFF'}
+        </ControlButton>
+      )}
        <ControlButton 
         onClick={onToggleGrounding} 
         className={`w-full ${isGroundingActive 

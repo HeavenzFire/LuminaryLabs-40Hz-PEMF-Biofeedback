@@ -3,27 +3,34 @@ import Visualizer from './components/Visualizer';
 import ControlPanel from './components/ControlPanel';
 import BiofeedbackDisplay from './components/BiofeedbackDisplay';
 import { useAudioController } from './hooks/useAudioController';
+import { useHapticController } from './hooks/useHapticController';
 import { BiofeedbackState } from './types';
 import { STATE_PROPERTIES, FREQUENCIES } from './constants';
 
 const STORAGE_KEY = 'LUMINARY_LABS_SETTINGS';
 const DEFAULT_GROUNDING_STATE = true;
+const DEFAULT_HAPTIC_STATE = true;
+
+const getInitialState = <T,>(key: string, defaultValue: T): T => {
+  try {
+    const savedSettings = localStorage.getItem(STORAGE_KEY);
+    if (savedSettings) {
+      const settings = JSON.parse(savedSettings);
+      return settings[key] !== undefined ? settings[key] : defaultValue;
+    }
+  } catch (error) {
+    console.error("Failed to parse settings from localStorage", error);
+  }
+  return defaultValue;
+}
 
 const App: React.FC = () => {
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [isBiofeedbackActive, setIsBiofeedbackActive] = useState<boolean>(false);
+  const [manualPlayMode, setManualPlayMode] = useState<'solfeggio' | 'pemf' | 'none'>('none');
   
-  const [isGroundingActive, setIsGroundingActive] = useState<boolean>(() => {
-    try {
-      const savedSettings = localStorage.getItem(STORAGE_KEY);
-      if (savedSettings) {
-        return JSON.parse(savedSettings).isGroundingActive;
-      }
-    } catch (error) {
-      console.error("Failed to parse settings from localStorage", error);
-    }
-    return DEFAULT_GROUNDING_STATE;
-  });
+  const [isGroundingActive, setIsGroundingActive] = useState<boolean>(() => getInitialState('isGroundingActive', DEFAULT_GROUNDING_STATE));
+  const [isHapticEnabled, setIsHapticEnabled] = useState<boolean>(() => getInitialState('isHapticEnabled', DEFAULT_HAPTIC_STATE));
 
   const [heartRate, setHeartRate] = useState<number>(70);
   const [affirmation, setAffirmation] = useState<string>('Welcome to LuminaryLabs. Let love and clarity heal you.');
@@ -32,6 +39,7 @@ const App: React.FC = () => {
   const [solfeggioIntensity, setSolfeggioIntensity] = useState<number>(0.3);
 
   const { playSolfeggio, playPemf, stopAudio, updateSolfeggioFrequency, updatePemfIntensity, playSchumann, stopSchumann, updateSolfeggioIntensity } = useAudioController();
+  const { isHapticReady, startHapticPulse, stopHaptics } = useHapticController();
 
   const biofeedbackState = useMemo(() => {
     if (heartRate > 80) return BiofeedbackState.STRESSED;
@@ -42,12 +50,12 @@ const App: React.FC = () => {
   // Effect to save settings to localStorage
   useEffect(() => {
     try {
-        const settings = { isGroundingActive };
+        const settings = { isGroundingActive, isHapticEnabled };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
     } catch (error) {
         console.error("Failed to save settings to localStorage", error);
     }
-  }, [isGroundingActive]);
+  }, [isGroundingActive, isHapticEnabled]);
 
   // Biofeedback simulation effect
   useEffect(() => {
@@ -74,16 +82,83 @@ const App: React.FC = () => {
     }
   }, [biofeedbackState, isBiofeedbackActive, updateSolfeggioFrequency, updatePemfIntensity]);
 
+  // Master effect for controlling haptics
+  useEffect(() => {
+    if (!isPlaying || !isHapticEnabled || !isHapticReady) {
+        stopHaptics();
+        return;
+    }
+
+    let hapticFrequency = 0;
+    let leftIntensity = 0;
+    let rightIntensity = 0;
+    const baseRumble = isGroundingActive ? 0.08 : 0;
+
+    if (isBiofeedbackActive) {
+        const properties = STATE_PROPERTIES[biofeedbackState];
+        hapticFrequency = FREQUENCIES.PEMF; // Default pulse
+        
+        switch (biofeedbackState) {
+            case BiofeedbackState.STRESSED:
+                leftIntensity = properties.pemfIntensity * 0.9 + baseRumble;
+                rightIntensity = properties.pemfIntensity * 0.9 + baseRumble;
+                break;
+            case BiofeedbackState.CALM:
+                hapticFrequency = 10; // Slower pulse for calm
+                leftIntensity = properties.pemfIntensity * 0.6 + baseRumble;
+                rightIntensity = properties.pemfIntensity * 0.7 + baseRumble; // Asymmetric
+                break;
+            case BiofeedbackState.INTUITIVE:
+                hapticFrequency = FREQUENCIES.SCHUMANN; // Pulse at Schumann resonance
+                leftIntensity = properties.pemfIntensity * 0.8 + baseRumble;
+                rightIntensity = properties.pemfIntensity * 0.8 + baseRumble;
+                break;
+        }
+    } else { // Manual mode
+        switch (manualPlayMode) {
+            case 'pemf':
+                hapticFrequency = FREQUENCIES.PEMF;
+                leftIntensity = pemfIntensity + baseRumble;
+                rightIntensity = pemfIntensity + baseRumble;
+                break;
+            case 'solfeggio':
+                hapticFrequency = 5; // slow, calming pulse
+                leftIntensity = solfeggioIntensity + baseRumble;
+                rightIntensity = solfeggioIntensity + baseRumble;
+                break;
+            default:
+                stopHaptics();
+                return;
+        }
+    }
+    
+    // Clamp intensities to be safe
+    leftIntensity = Math.max(0, Math.min(1, leftIntensity));
+    rightIntensity = Math.max(0, Math.min(1, rightIntensity));
+
+    if (hapticFrequency > 0 && (leftIntensity > 0 || rightIntensity > 0)) {
+        startHapticPulse(hapticFrequency, leftIntensity, rightIntensity);
+    } else {
+        stopHaptics();
+    }
+
+    return () => {
+      stopHaptics();
+    };
+  }, [ isPlaying, isHapticEnabled, isHapticReady, isBiofeedbackActive, biofeedbackState, manualPlayMode, pemfIntensity, solfeggioIntensity, isGroundingActive, startHapticPulse, stopHaptics ]);
+
+
   const handleStartBiofeedback = useCallback(() => {
     const initialState = heartRate > 80 ? BiofeedbackState.STRESSED : heartRate > 60 ? BiofeedbackState.CALM : BiofeedbackState.INTUITIVE;
     const properties = STATE_PROPERTIES[initialState];
     
-    playSolfeggio(properties.solfeggio, properties.pemfIntensity); // Biofeedback uses pemfIntensity for solfeggio too
+    playSolfeggio(properties.solfeggio, properties.pemfIntensity);
     playPemf(FREQUENCIES.PEMF, properties.pemfIntensity);
     if (isGroundingActive) {
       playSchumann(FREQUENCIES.SCHUMANN);
     }
     
+    setManualPlayMode('none');
     setIsPlaying(true);
     setIsBiofeedbackActive(true);
   }, [heartRate, playSolfeggio, playPemf, isGroundingActive, playSchumann]);
@@ -94,6 +169,7 @@ const App: React.FC = () => {
     if (isGroundingActive) {
       playSchumann(FREQUENCIES.SCHUMANN);
     }
+    setManualPlayMode('solfeggio');
     setIsPlaying(true);
     setIsBiofeedbackActive(false);
     setAffirmation('Focus on the tone. Let it resonate within you.')
@@ -105,6 +181,7 @@ const App: React.FC = () => {
      if (isGroundingActive) {
       playSchumann(FREQUENCIES.SCHUMANN);
     }
+    setManualPlayMode('pemf');
     setIsPlaying(true);
     setIsBiofeedbackActive(false);
     setAffirmation('Feel the 40Hz pulse harmonizing your mind.')
@@ -112,6 +189,7 @@ const App: React.FC = () => {
 
   const handleStop = useCallback(() => {
     stopAudio();
+    setManualPlayMode('none');
     setIsPlaying(false);
     setIsBiofeedbackActive(false);
     setHeartRate(70);
@@ -122,7 +200,7 @@ const App: React.FC = () => {
     const newGroundingState = !isGroundingActive;
     setIsGroundingActive(newGroundingState);
 
-    if (isPlaying) { // Only affect audio if something is already playing
+    if (isPlaying) {
       if (newGroundingState) {
         playSchumann(FREQUENCIES.SCHUMANN);
       } else {
@@ -130,12 +208,17 @@ const App: React.FC = () => {
       }
     }
   }, [isGroundingActive, isPlaying, playSchumann, stopSchumann]);
+
+  const handleToggleHaptics = useCallback(() => {
+    setIsHapticEnabled(prev => !prev);
+  }, []);
   
   const handleClearSettings = useCallback(() => {
     try {
         localStorage.removeItem(STORAGE_KEY);
         // Reset state to default after clearing
         setIsGroundingActive(DEFAULT_GROUNDING_STATE);
+        setIsHapticEnabled(DEFAULT_HAPTIC_STATE);
         alert("Saved settings have been cleared.");
     } catch (error) {
         console.error("Failed to clear settings from localStorage", error);
@@ -179,11 +262,14 @@ const App: React.FC = () => {
             isBiofeedbackActive={isBiofeedbackActive}
             isPlaying={isPlaying}
             isGroundingActive={isGroundingActive}
+            isHapticReady={isHapticReady}
+            isHapticEnabled={isHapticEnabled}
             onStartBiofeedback={handleStartBiofeedback}
             onPlaySolfeggio={handlePlaySolfeggio}
             onPlayPemf={handlePlayPemf}
             onStop={handleStop}
             onToggleGrounding={handleToggleGrounding}
+            onToggleHaptics={handleToggleHaptics}
             onClearSettings={handleClearSettings}
             pemfIntensity={pemfIntensity}
             solfeggioIntensity={solfeggioIntensity}
