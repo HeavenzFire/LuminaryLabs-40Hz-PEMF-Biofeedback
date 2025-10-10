@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect } from 'react';
 import { BiofeedbackState } from '../types';
 import { STATE_PROPERTIES } from '../constants';
@@ -7,6 +8,7 @@ interface VisualizerProps {
   heartRate: number;
   isPlaying: boolean;
   isGroundingActive: boolean;
+  isCrystalAttunementActive: boolean;
 }
 
 // Particle type definition
@@ -40,12 +42,19 @@ const VISUAL_CONFIG = {
   },
 };
 
+const FRACTAL_PARAMS = {
+  [BiofeedbackState.STRESSED]: { a: -1.3, b: 1.8, c: -1.2, d: -1.6, scale: 100 },
+  [BiofeedbackState.CALM]:    { a: 1.7, b: 1.7, c: 0.6, d: 1.2, scale: 120 },
+  [BiofeedbackState.INTUITIVE]: { a: -1.4, b: 1.6, c: 1.0, d: 0.7, scale: 110 },
+};
 
-const Visualizer: React.FC<VisualizerProps> = ({ state, heartRate, isPlaying, isGroundingActive }) => {
+
+const Visualizer: React.FC<VisualizerProps> = ({ state, heartRate, isPlaying, isGroundingActive, isCrystalAttunementActive }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameId = useRef<number>(0);
   const time = useRef<number>(0);
   const particlesRef = useRef<Particle[]>([]);
+  const fractalPointsRef = useRef<{x: number, y: number}[]>([{x: 0.1, y: 0.1}]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -80,6 +89,108 @@ const Visualizer: React.FC<VisualizerProps> = ({ state, heartRate, isPlaying, is
             maxLife: maxLife,
         };
     };
+    
+    const drawFractal = () => {
+      const { a, b, c, d, scale } = FRACTAL_PARAMS[state];
+      const [r, g, bVal] = VISUAL_CONFIG[state].baseColor;
+      ctx.fillStyle = `rgba(${r}, ${g}, ${bVal}, 0.6)`;
+      
+      const centerX = canvas.width / 2;
+      const centerY = canvas.height / 2;
+
+      // Generate a few new points each frame for animation
+      for(let i=0; i < 100; i++) {
+        const lastPoint = fractalPointsRef.current[fractalPointsRef.current.length - 1];
+        const {x, y} = lastPoint;
+        const nextX = Math.sin(a * y) + c * Math.cos(a * x);
+        const nextY = Math.sin(b * x) + d * Math.cos(b * y);
+        fractalPointsRef.current.push({ x: nextX, y: nextY });
+      }
+
+      // Keep the array from growing indefinitely
+      if (fractalPointsRef.current.length > 5000) {
+        fractalPointsRef.current.splice(0, 100);
+      }
+
+      // Draw all points
+      for(const point of fractalPointsRef.current) {
+        const px = point.x * scale + centerX;
+        const py = point.y * scale + centerY;
+        ctx.fillRect(px, py, 1, 1);
+      }
+    };
+
+    const drawCrystal = (centerX: number, centerY: number) => {
+        const color = STATE_PROPERTIES[state].color;
+        
+        ctx.strokeStyle = color;
+        ctx.fillStyle = `${color}33`; // Hex with alpha
+        ctx.lineWidth = 1;
+        ctx.shadowBlur = 20;
+        ctx.shadowColor = color;
+
+        const radius = 30 + Math.sin(time.current * 0.05) * (heartRate / 10);
+        const points = 6;
+        
+        ctx.beginPath();
+        for (let i = 0; i <= points; i++) {
+            const angle = (i * 2 * Math.PI) / points - Math.PI / 2;
+            const displacement = (i % 2 === 0 ? 1 : 0.6) * radius * (1 + Math.sin(time.current * 0.1 + i) * 0.1);
+            const x = centerX + Math.cos(angle) * displacement;
+            const y = centerY + Math.sin(angle) * displacement;
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
+        }
+        ctx.closePath();
+        ctx.stroke();
+        ctx.fill();
+        ctx.shadowBlur = 0;
+    };
+
+    const drawOriginalCircles = (centerX: number, centerY: number) => {
+        const color = STATE_PROPERTIES[state].color;
+        const config = VISUAL_CONFIG[state];
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.lineWidth = 1.5;
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = color;
+        const numCircles = 6;
+        
+        const radius1 = 60 + Math.sin(time.current * 0.1) * (heartRate / 5);
+        ctx.strokeStyle = color;
+        ctx.globalAlpha = 0.6;
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius1, 0, 2 * Math.PI);
+        ctx.stroke();
+        for (let i = 0; i < numCircles; i++) {
+            const angle = (i * 2 * Math.PI) / numCircles;
+            const x = centerX + Math.cos(angle) * radius1;
+            const y = centerY + Math.sin(angle) * radius1;
+            ctx.beginPath();
+            ctx.arc(x, y, radius1, 0, 2 * Math.PI);
+            ctx.stroke();
+        }
+    
+        const radius2 = 60 + Math.cos(time.current * 0.1) * (heartRate / 5);
+        ctx.strokeStyle = `rgba(${config.baseColor.join(',')}, 0.8)`;
+        ctx.globalAlpha = 0.8;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius2, 0, 2 * Math.PI);
+        ctx.stroke();
+        for (let i = 0; i < numCircles; i++) {
+            const angle = (i * 2 * Math.PI) / numCircles + time.current * 0.005;
+            const x = centerX + Math.cos(angle) * radius2;
+            const y = centerY + Math.sin(angle) * radius2;
+            ctx.beginPath();
+            ctx.arc(x, y, radius2, 0, 2 * Math.PI);
+            ctx.stroke();
+        }
+    };
+
 
     const draw = () => {
       const centerX = canvas.width / 2;
@@ -88,6 +199,10 @@ const Visualizer: React.FC<VisualizerProps> = ({ state, heartRate, isPlaying, is
       ctx.globalCompositeOperation = 'source-over';
       ctx.fillStyle = 'rgba(10, 10, 35, 0.1)';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      if (isCrystalAttunementActive) {
+          drawFractal();
+      }
 
       // Draw grounding aura if active
       if (isGroundingActive) {
@@ -130,42 +245,10 @@ const Visualizer: React.FC<VisualizerProps> = ({ state, heartRate, isPlaying, is
         }
       }
 
-      ctx.globalCompositeOperation = 'source-over';
-      const color = STATE_PROPERTIES[state].color;
-      ctx.lineWidth = 1.5;
-      ctx.shadowBlur = 15;
-      ctx.shadowColor = color;
-      const numCircles = 6;
-      
-      const radius1 = 60 + Math.sin(time.current * 0.1) * (heartRate / 5);
-      ctx.strokeStyle = color;
-      ctx.globalAlpha = 0.6;
-      ctx.beginPath();
-      ctx.arc(centerX, centerY, radius1, 0, 2 * Math.PI);
-      ctx.stroke();
-      for (let i = 0; i < numCircles; i++) {
-        const angle = (i * 2 * Math.PI) / numCircles;
-        const x = centerX + Math.cos(angle) * radius1;
-        const y = centerY + Math.sin(angle) * radius1;
-        ctx.beginPath();
-        ctx.arc(x, y, radius1, 0, 2 * Math.PI);
-        ctx.stroke();
-      }
-
-      const radius2 = 60 + Math.cos(time.current * 0.1) * (heartRate / 5);
-      ctx.strokeStyle = `rgba(${config.baseColor.join(',')}, 0.8)`;
-      ctx.globalAlpha = 0.8;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(centerX, centerY, radius2, 0, 2 * Math.PI);
-      ctx.stroke();
-      for (let i = 0; i < numCircles; i++) {
-        const angle = (i * 2 * Math.PI) / numCircles + time.current * 0.005;
-        const x = centerX + Math.cos(angle) * radius2;
-        const y = centerY + Math.sin(angle) * radius2;
-        ctx.beginPath();
-        ctx.arc(x, y, radius2, 0, 2 * Math.PI);
-        ctx.stroke();
+      if (isCrystalAttunementActive) {
+        drawCrystal(centerX, centerY);
+      } else {
+        drawOriginalCircles(centerX, centerY);
       }
       
       ctx.globalAlpha = 1.0;
@@ -180,12 +263,13 @@ const Visualizer: React.FC<VisualizerProps> = ({ state, heartRate, isPlaying, is
     } else {
        ctx.clearRect(0, 0, canvas.width, canvas.height);
        particlesRef.current = [];
+       fractalPointsRef.current = [{x: 0.1, y: 0.1}];
     }
 
     return () => {
       cancelAnimationFrame(animationFrameId.current);
     };
-  }, [isPlaying, state, heartRate, isGroundingActive]);
+  }, [isPlaying, state, heartRate, isGroundingActive, isCrystalAttunementActive]);
 
   return <canvas ref={canvasRef} width="600" height="600" className="border-2 border-gray-700 rounded-full shadow-2xl" />;
 };

@@ -9,6 +9,7 @@ export enum HapticPattern {
   DEFAULT = 'DEFAULT',
   WAVE = 'WAVE',
   HEARTBEAT = 'HEARTBEAT',
+  CRYSTAL = 'CRYSTAL',
 }
 
 export interface StateProperties {

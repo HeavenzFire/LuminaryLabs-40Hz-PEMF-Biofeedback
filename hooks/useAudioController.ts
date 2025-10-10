@@ -1,23 +1,28 @@
+
 import React, { useRef, useCallback } from 'react';
 
 // Define a type for the audio nodes to be stored in the ref
 interface AudioNodes {
   audioCtx: AudioContext | null;
-  solfeggioOscillator: OscillatorNode | null;
-  solfeggioGain: GainNode | null;
+  solfeggioOscillators: OscillatorNode[];
+  solfeggioGains: GainNode[];
   pemfOscillator: OscillatorNode | null;
   pemfGain: GainNode | null;
   schumannOscillator: OscillatorNode | null;
+  crystalChimeOscillator: OscillatorNode | null;
+  crystalChimeGain: GainNode | null;
 }
 
 export const useAudioController = () => {
   const audioNodesRef = useRef<AudioNodes>({
     audioCtx: null,
-    solfeggioOscillator: null,
-    solfeggioGain: null,
+    solfeggioOscillators: [],
+    solfeggioGains: [],
     pemfOscillator: null,
     pemfGain: null,
     schumannOscillator: null,
+    crystalChimeOscillator: null,
+    crystalChimeGain: null,
   });
 
   const getAudioContext = useCallback(() => {
@@ -28,14 +33,14 @@ export const useAudioController = () => {
   }, []);
 
   const stopAudio = useCallback(() => {
-    const { solfeggioOscillator, solfeggioGain, pemfOscillator, pemfGain, schumannOscillator } = audioNodesRef.current;
-    if (solfeggioOscillator) {
-      solfeggioOscillator.stop();
-      solfeggioOscillator.disconnect();
-    }
-    if (solfeggioGain) {
-      solfeggioGain.disconnect();
-    }
+    const { solfeggioOscillators, solfeggioGains, pemfOscillator, pemfGain, schumannOscillator, crystalChimeOscillator, crystalChimeGain } = audioNodesRef.current;
+    
+    solfeggioOscillators.forEach(osc => {
+      osc.stop();
+      osc.disconnect();
+    });
+    solfeggioGains.forEach(gain => gain.disconnect());
+
     if (pemfOscillator) {
       pemfOscillator.stop();
       pemfOscillator.disconnect();
@@ -47,11 +52,20 @@ export const useAudioController = () => {
       schumannOscillator.stop();
       schumannOscillator.disconnect();
     }
-    audioNodesRef.current.solfeggioOscillator = null;
-    audioNodesRef.current.solfeggioGain = null;
+    if (crystalChimeOscillator) {
+        crystalChimeOscillator.stop();
+        crystalChimeOscillator.disconnect();
+    }
+    if (crystalChimeGain) {
+        crystalChimeGain.disconnect();
+    }
+    audioNodesRef.current.solfeggioOscillators = [];
+    audioNodesRef.current.solfeggioGains = [];
     audioNodesRef.current.pemfOscillator = null;
     audioNodesRef.current.pemfGain = null;
     audioNodesRef.current.schumannOscillator = null;
+    audioNodesRef.current.crystalChimeOscillator = null;
+    audioNodesRef.current.crystalChimeGain = null;
 
     if (audioNodesRef.current.audioCtx && audioNodesRef.current.audioCtx.state !== 'closed') {
         // We don't close the context immediately, to allow for quick restart.
@@ -59,26 +73,40 @@ export const useAudioController = () => {
     }
   }, []);
 
-  const playSolfeggio = useCallback((frequency: number, intensity: number) => {
+  const playSolfeggios = useCallback((frequencies: number[], intensity: number) => {
     const audioCtx = getAudioContext();
-    if (audioNodesRef.current.solfeggioOscillator) {
-      audioNodesRef.current.solfeggioOscillator.stop();
-    }
-    if (audioNodesRef.current.solfeggioGain) {
-        audioNodesRef.current.solfeggioGain.disconnect();
-    }
-    const oscillator = audioCtx.createOscillator();
-    const gainNode = audioCtx.createGain();
+    // Stop and clear existing solfeggio oscillators and gains
+    audioNodesRef.current.solfeggioOscillators.forEach(osc => {
+      osc.stop();
+      osc.disconnect();
+    });
+    audioNodesRef.current.solfeggioGains.forEach(gain => {
+      gain.disconnect();
+    });
 
-    oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(frequency, audioCtx.currentTime);
-    gainNode.gain.setValueAtTime(intensity, audioCtx.currentTime);
+    const newOscillators: OscillatorNode[] = [];
+    const newGains: GainNode[] = [];
 
-    oscillator.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
-    oscillator.start();
-    audioNodesRef.current.solfeggioOscillator = oscillator;
-    audioNodesRef.current.solfeggioGain = gainNode;
+    frequencies.forEach(frequency => {
+      if (isNaN(frequency) || frequency <= 0) return;
+
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(frequency, audioCtx.currentTime);
+      gainNode.gain.setValueAtTime(intensity, audioCtx.currentTime);
+
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      oscillator.start();
+      
+      newOscillators.push(oscillator);
+      newGains.push(gainNode);
+    });
+    
+    audioNodesRef.current.solfeggioOscillators = newOscillators;
+    audioNodesRef.current.solfeggioGains = newGains;
   }, [getAudioContext]);
 
   const playPemf = useCallback((frequency: number, intensity: number) => {
@@ -132,17 +160,64 @@ export const useAudioController = () => {
     }
   }, []);
   
+    const playCrystalChime = useCallback(() => {
+        const audioCtx = getAudioContext();
+        if (audioNodesRef.current.crystalChimeOscillator) return; // Don't overlap chimes
+
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(2000, audioCtx.currentTime);
+
+        // Gentle fade in and out
+        gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+        gainNode.gain.linearRampToValueAtTime(0.1, audioCtx.currentTime + 2); // 2s attack
+        gainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 6); // 4s decay
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscillator.start();
+        
+        // Clean up after the sound finishes
+        oscillator.onended = () => {
+            if (audioNodesRef.current.crystalChimeOscillator === oscillator) {
+                audioNodesRef.current.crystalChimeOscillator = null;
+                audioNodesRef.current.crystalChimeGain = null;
+            }
+        };
+        oscillator.stop(audioCtx.currentTime + 6.5);
+
+        audioNodesRef.current.crystalChimeOscillator = oscillator;
+        audioNodesRef.current.crystalChimeGain = gainNode;
+    }, [getAudioContext]);
+  
+    const stopCrystalChime = useCallback(() => {
+        const { crystalChimeOscillator, crystalChimeGain, audioCtx } = audioNodesRef.current;
+        if (crystalChimeOscillator && crystalChimeGain && audioCtx) {
+            // Fast fade out
+            crystalChimeGain.gain.cancelScheduledValues(audioCtx.currentTime);
+            crystalChimeGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.1);
+            crystalChimeOscillator.stop(audioCtx.currentTime + 0.2);
+            audioNodesRef.current.crystalChimeOscillator = null;
+            audioNodesRef.current.crystalChimeGain = null;
+        }
+    }, []);
+
   const updateSolfeggioFrequency = useCallback((frequency: number) => {
-      const { audioCtx, solfeggioOscillator } = audioNodesRef.current;
-      if (audioCtx && solfeggioOscillator) {
-          solfeggioOscillator.frequency.setValueAtTime(frequency, audioCtx.currentTime);
+      const { audioCtx, solfeggioOscillators } = audioNodesRef.current;
+      if (audioCtx && solfeggioOscillators.length > 0) {
+          // In biofeedback mode, we only expect one oscillator.
+          solfeggioOscillators[0].frequency.setValueAtTime(frequency, audioCtx.currentTime);
       }
   }, []);
   
   const updateSolfeggioIntensity = useCallback((intensity: number) => {
-      const { audioCtx, solfeggioGain } = audioNodesRef.current;
-      if (audioCtx && solfeggioGain) {
-          solfeggioGain.gain.setValueAtTime(intensity, audioCtx.currentTime);
+      const { audioCtx, solfeggioGains } = audioNodesRef.current;
+      if (audioCtx && solfeggioGains.length > 0) {
+          solfeggioGains.forEach(gain => {
+            gain.gain.setValueAtTime(intensity, audioCtx.currentTime);
+          });
       }
   }, []);
 
@@ -154,5 +229,5 @@ export const useAudioController = () => {
   }, []);
 
 
-  return { playSolfeggio, playPemf, stopAudio, updateSolfeggioFrequency, updatePemfIntensity, playSchumann, stopSchumann, updateSolfeggioIntensity };
+  return { playSolfeggios, playPemf, stopAudio, updateSolfeggioFrequency, updatePemfIntensity, playSchumann, stopSchumann, updateSolfeggioIntensity, playCrystalChime, stopCrystalChime };
 };

@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { FREQUENCIES } from '../constants';
 import { HapticPattern } from '../types';
@@ -29,6 +30,11 @@ interface ControlPanelProps {
   onHapticWaveDutyCycleChange: (value: number) => void;
   hapticHeartbeatIntensityMod: number;
   onHapticHeartbeatIntensityModChange: (value: number) => void;
+  isCrystalAttunementActive: boolean;
+  onToggleCrystalAttunement: () => void;
+  customFrequencies: string[];
+  onCustomFrequencyChange: (index: number, value: string) => void;
+  onPlayCustomSolfeggios: () => void;
 }
 
 const ControlButton: React.FC<{ onClick: () => void; disabled?: boolean; children: React.ReactNode; className?: string }> = ({ onClick, disabled = false, children, className = '' }) => (
@@ -100,6 +106,11 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
     onHapticWaveDutyCycleChange,
     hapticHeartbeatIntensityMod,
     onHapticHeartbeatIntensityModChange,
+    isCrystalAttunementActive,
+    onToggleCrystalAttunement,
+    customFrequencies,
+    onCustomFrequencyChange,
+    onPlayCustomSolfeggios,
 }) => {
   return (
     <div className="flex flex-col items-center gap-4 p-6 bg-gray-800/50 rounded-xl backdrop-blur-sm border border-gray-700">
@@ -117,7 +128,35 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
           Play 40Hz PEMF
         </ControlButton>
       </div>
+
       <div className="w-full border-t border-gray-600 my-2"></div>
+      
+      <div className="w-full space-y-3">
+        <div className="text-center text-gray-400 text-sm font-semibold tracking-wider">CUSTOM FREQUENCIES</div>
+        <div className="flex gap-2">
+            {customFrequencies.map((freq, index) => (
+            <input
+                key={index}
+                type="number"
+                placeholder={`Freq ${index + 1} (Hz)`}
+                value={freq}
+                onChange={(e) => onCustomFrequencyChange(index, e.target.value)}
+                disabled={isBiofeedbackActive}
+                className="w-full bg-gray-700 text-white rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder-gray-500"
+            />
+            ))}
+        </div>
+        <ControlButton 
+            onClick={onPlayCustomSolfeggios} 
+            disabled={isBiofeedbackActive} 
+            className="w-full bg-teal-600 hover:bg-teal-500 focus:ring-teal-400"
+        >
+            Play Custom Frequencies
+        </ControlButton>
+      </div>
+
+      <div className="w-full border-t border-gray-600 my-2"></div>
+
       <div className="w-full space-y-3">
           <SliderControl
             label="Solfeggio Intensity"
@@ -142,6 +181,15 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
         }`}
       >
         Grounding (7.83Hz): {isGroundingActive ? 'ON' : 'OFF'}
+      </ControlButton>
+      <ControlButton
+        onClick={onToggleCrystalAttunement}
+        className={`w-full ${isCrystalAttunementActive 
+            ? 'bg-gradient-to-r from-cyan-400 to-fuchsia-500 hover:opacity-90 focus:ring-cyan-400' 
+            : 'bg-gray-600 hover:bg-gray-500 focus:ring-gray-400'
+        }`}
+      >
+        Crystal Attunement: {isCrystalAttunementActive ? 'ON' : 'OFF'}
       </ControlButton>
       
       {isHapticReady && (
@@ -180,6 +228,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
                   <option value={HapticPattern.DEFAULT}>Default (Pulse)</option>
                   <option value={HapticPattern.WAVE}>Calm Wave</option>
                   <option value={HapticPattern.HEARTBEAT}>Heartbeat</option>
+                  <option value={HapticPattern.CRYSTAL}>Crystal Resonance</option>
                 </select>
               </div>
 
